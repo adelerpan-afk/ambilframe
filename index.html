@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frame Awal & Akhir</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1020;--panel:#121a2d;--panel2:#18233a;--line:#293754;--text:#eef4ff;--muted:#a7b5ce;--accent:#8b9cff;--accent2:#64e2c1;--danger:#ff8e9a}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(ellipse at top,#172343 0%,var(--bg) 55%);color:var(--text);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;min-height:100vh}
+main{max-width:1100px;margin:auto;padding:28px 18px 44px}
+header{margin-bottom:22px}
+.eyebrow{color:var(--accent2);font-weight:750;text-transform:uppercase;letter-spacing:.14em;font-size:.76rem}
+h1{font-size:clamp(1.8rem,5vw,3rem);line-height:1.08;letter-spacing:-.04em;margin:9px 0 12px}
+header p{color:var(--muted);max-width:700px;margin:0}
+.panel{background:rgba(18,26,45,.92);border:1px solid var(--line);border-radius:20px;padding:20px;box-shadow:0 18px 50px #0002}
+.upload{display:flex;gap:14px;align-items:center;flex-wrap:wrap;border:1.5px dashed #50618a;border-radius:15px;padding:18px;background:#10182a}
+.upload-copy{flex:1;min-width:200px}
+.upload-copy strong{display:block;font-size:1.02rem}
+.upload-copy span,.hint{color:var(--muted);font-size:.88rem}
+input[type=file]{max-width:100%;color:var(--muted)}
+button{border:0;border-radius:11px;padding:11px 15px;font:inherit;font-weight:750;cursor:pointer;transition:transform .15s,opacity .15s,background .15s}
+button:hover:not(:disabled){transform:translateY(-1px)}
+button:disabled{opacity:.42;cursor:not-allowed}
+.primary{background:var(--accent);color:#0b1020}
+.secondary{background:#253451;color:var(--text);border:1px solid #3a4a6a}
+.success{background:var(--accent2);color:#06251f}
+.status{margin:12px 2px 0;color:var(--muted);font-size:.9rem;min-height:1.4em}
+.status.error{color:var(--danger)}
+.status.good{color:var(--accent2)}
+.video-wrap{margin-top:18px;display:none}
+video{display:block;width:100%;max-height:480px;background:#05070c;border-radius:13px}
+.meta{display:flex;gap:8px;flex-wrap:wrap;margin-top:11px}
+.pill{background:#202c45;border:1px solid #31405d;color:#dce6fb;border-radius:99px;padding:5px 10px;font-size:.82rem}
+.results{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:18px}
+.frame-card{min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+.frame-head{padding:15px 16px 10px;display:flex;justify-content:space-between;gap:10px;align-items:center}
+.frame-head h2{font-size:1.05rem;margin:0}
+.frame-head p{font-size:.8rem;color:var(--muted);margin:3px 0 0}
+.preview{display:flex;align-items:center;justify-content:center;min-height:180px;padding:10px;background:#080c15;border-top:1px solid #202b43;border-bottom:1px solid #202b43}
+.preview img{display:block;max-width:100%;max-height:420px;object-fit:contain}
+.placeholder{color:#7786a3;text-align:center;padding:28px 10px}
+.card-foot{padding:13px 15px;display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap}
+.dimensions{font-size:.82rem;color:var(--muted);overflow-wrap:anywhere}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.bottom{display:flex;gap:10px;flex-wrap:wrap;justify-content:space-between;align-items:center;margin-top:17px}
+.bottom .hint{max-width:610px}
+footer{color:#7786a3;font-size:.82rem;text-align:center;margin-top:24px}
+@media(max-width:680px){main{padding:20px 12px 32px}.panel{padding:14px}.results{grid-template-columns:1fr}.preview{min-height:150px}.preview img{max-height:360px}.frame-head{padding:13px}.card-foot{padding:12px}}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div class="eyebrow">Video utility · lokal di browser</div>
+  <h1>Ambil Frame Awal &amp; Akhir</h1>
+  <p>Unggah video, lalu ambil gambar dari frame pertama dan frame terakhir yang berhasil didekode browser. Hasil disimpan sebagai PNG dengan resolusi asli video.</p>
+</header>
+<section class="panel">
+  <div class="upload">
+    <div class="upload-copy">
+      <strong>Pilih video kamu</strong>
+      <span>MP4, WebM, MOV, atau format lain yang didukung browser.</span>
+    </div>
+    <input id="fileInput" type="file" accept="video/*">
+  </div>
+  <div id="status" class="status" role="status" aria-live="polite">Belum ada video. Pilih file untuk memulai.</div>
+  <div id="videoWrap" class="video-wrap">
+    <video id="video" controls playsinline muted preload="auto"></video>
+    <div class="meta">
+      <span id="fileMeta" class="pill">Video</span>
+      <span id="durationMeta" class="pill">Durasi: --</span>
+      <span id="resolutionMeta" class="pill">Resolusi: --</span>
+    </div>
+    <div class="bottom">
+      <span class="hint">Frame akhir dicari dengan bergerak mundur dari ujung video untuk menghindari frame kosong akibat batas durasi.</span>
+      <button id="extractBtn" class="primary" disabled>Ambil kedua frame</button>
+    </div>
+  </div>
+</section>
+
+<section class="results" aria-label="Hasil ekstraksi">
+  <article class="frame-card">
+    <div class="frame-head"><div><h2>01 · Frame awal</h2><p>Awal video</p></div><span class="pill">START</span></div>
+    <div class="preview" id="startPreview"><div class="placeholder">Frame awal akan tampil di sini</div></div>
+    <div class="card-foot"><span id="startInfo" class="dimensions">Belum diambil</span><button id="downloadStart" class="secondary" disabled>Unduh PNG</button></div>
+  </article>
+  <article class="frame-card">
+    <div class="frame-head"><div><h2>02 · Frame akhir</h2><p>Frame terakhir yang terbaca</p></div><span class="pill">END</span></div>
+    <div class="preview" id="endPreview"><div class="placeholder">Frame akhir akan tampil di sini</div></div>
+    <div class="card-foot"><span id="endInfo" class="dimensions">Belum diambil</span><button id="downloadEnd" class="secondary" disabled>Unduh PNG</button></div>
+  </article>
+</section>
+<footer>Video diproses di perangkat kamu. File tidak diunggah ke server.</footer>
+</main>
+<script>
+(() => {
+  const input = document.getElementById('fileInput');
+  const video = document.getElementById('video');
+  const videoWrap = document.getElementById('videoWrap');
+  const status = document.getElementById('status');
+  const extractBtn = document.getElementById('extractBtn');
+  const startPreview = document.getElementById('startPreview');
+  const endPreview = document.getElementById('endPreview');
+  const startInfo = document.getElementById('startInfo');
+  const endInfo = document.getElementById('endInfo');
+  const downloadStart = document.getElementById('downloadStart');
+  const downloadEnd = document.getElementById('downloadEnd');
+  let objectUrl = null;
+  let sourceName = 'video';
+  let startBlob = null, endBlob = null;
+  let activeJob = 0;
+
+  function setStatus(message, type='') {
+    status.textContent = message;
+    status.className = 'status' + (type ? ' ' + type : '');
+  }
+  function formatTime(seconds) {
+    if (!Number.isFinite(seconds)) return '--:--';
+    const m = Math.floor(seconds / 60);
+    const s = (seconds % 60).toFixed(3).padStart(6, '0');
+    return `${m}:${s}`;
+  }
+  function waitEvent(target, eventName, errorName='error') {
+    return new Promise((resolve, reject) => {
+      const cleanup = () => {
+        target.removeEventListener(eventName, onOk);
+        target.removeEventListener(errorName, onErr);
+      };
+      const onOk = () => { cleanup(); resolve(); };
+      const onErr = () => { cleanup(); reject(new Error('Browser tidak dapat membaca video ini. Coba MP4 H.264 atau WebM.')); };
+      target.addEventListener(eventName, onOk, {once:true});
+      target.addEventListener(errorName, onErr, {once:true});
+    });
+  }
+  async function seekTo(time) {
+    const target = Math.max(0, Math.min(time, Math.max(0, video.duration - 0.001)));
+    if (Math.abs(video.currentTime - target) < 0.0005 && video.readyState >= 2) {
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      return;
+    }
+    const seekPromise = waitEvent(video, 'seeked');
+    video.currentTime = target;
+    await seekPromise;
+    if (video.readyState < 2) await waitEvent(video, 'loadeddata');
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  }
+  function captureBlob() {
+    if (!video.videoWidth || !video.videoHeight) throw new Error('Dimensi video belum siap.');
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Canvas tidak tersedia di browser ini.');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    return new Promise((resolve, reject) => canvas.toBlob(blob => {
+      if (blob) resolve({blob, width:canvas.width, height:canvas.height});
+      else reject(new Error('Gagal membuat PNG. Coba browser lain atau format video lain.'));
+    }, 'image/png'));
+  }
+  function showFrame(container, infoEl, result, timeLabel) {
+    const url = URL.createObjectURL(result.blob);
+    container.replaceChildren();
+    const img = document.createElement('img');
+    img.src = url;
+    img.alt = timeLabel;
+    container.appendChild(img);
+    infoEl.textContent = `${result.width} × ${result.height} px · ${timeLabel}`;
+  }
+  function download(blob, suffix) {
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${sourceName}-${suffix}.png`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  }
+  input.addEventListener('change', async () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    activeJob++;
+    startBlob = endBlob = null;
+    downloadStart.disabled = downloadEnd.disabled = extractBtn.disabled = true;
+    startPreview.innerHTML = '<div class="placeholder">Frame awal akan tampil di sini</div>';
+    endPreview.innerHTML = '<div class="placeholder">Frame akhir akan tampil di sini</div>';
+    startInfo.textContent = endInfo.textContent = 'Belum diambil';
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+    objectUrl = URL.createObjectURL(file);
+    sourceName = file.name.replace(/\.[^.]+$/, '').replace(/[^\w\-]+/g, '_') || 'video';
+    video.src = objectUrl;
+    videoWrap.style.display = 'block';
+    setStatus('Membaca metadata video…');
+    try {
+      await waitEvent(video, 'loadedmetadata');
+      if (!Number.isFinite(video.duration) || !video.videoWidth) throw new Error('Durasi atau resolusi video tidak terbaca.');
+      document.getElementById('fileMeta').textContent = file.name;
+      document.getElementById('durationMeta').textContent = `Durasi: ${formatTime(video.duration)}`;
+      document.getElementById('resolutionMeta').textContent = `Resolusi: ${video.videoWidth} × ${video.videoHeight}`;
+      extractBtn.disabled = false;
+      setStatus('Video siap. Klik “Ambil kedua frame”.', 'good');
+    } catch (err) {
+      setStatus(err.message || 'Gagal membaca video.', 'error');
+    }
+  });
+
+  extractBtn.addEventListener('click', async () => {
+    if (!video.src || !Number.isFinite(video.duration)) return;
+    const job = ++activeJob;
+    extractBtn.disabled = true;
+    downloadStart.disabled = downloadEnd.disabled = true;
+    video.pause();
+    try {
+      setStatus('Mengambil frame awal…');
+      await seekTo(0.001);
+      const start = await captureBlob();
+      if (job !== activeJob) return;
+      startBlob = start.blob;
+      showFrame(startPreview, startInfo, start, `t = ${formatTime(video.currentTime)}`);
+
+      setStatus('Mencari frame terakhir yang dapat dibaca…');
+      // Seek progressively farther from the end. This avoids seeking exactly to duration,
+      // which can produce a blank frame in some browser/codec combinations.
+      const duration = video.duration;
+      const candidates = [1/120, 1/60, 1/30, 1/24, 1/15, 0.1, 0.2, 0.35, 0.5].map(delta => Math.max(0, duration-delta));
+      let finalResult = null;
+      let finalTime = 0;
+      for (const t of candidates) {
+        try {
+          await seekTo(t);
+          const candidate = await captureBlob();
+          finalResult = candidate;
+          finalTime = video.currentTime;
+          // First candidate nearest the end is preferred if it decoded.
+          break;
+        } catch (_) { /* try a safer earlier timestamp */ }
+      }
+      if (!finalResult) throw new Error('Tidak berhasil membaca frame akhir. Coba ekspor ulang video ke MP4 H.264.');
+      if (job !== activeJob) return;
+      endBlob = finalResult.blob;
+      showFrame(endPreview, endInfo, finalResult, `t ≈ ${formatTime(finalTime)}`);
+      downloadStart.disabled = downloadEnd.disabled = false;
+      setStatus('Selesai! Kedua frame siap diunduh sebagai PNG.', 'good');
+    } catch (err) {
+      setStatus(err.message || 'Ekstraksi gagal. Coba file video lain.', 'error');
+    } finally {
+      if (job === activeJob) extractBtn.disabled = false;
+    }
+  });
+  downloadStart.addEventListener('click', () => download(startBlob, 'frame-awal'));
+  downloadEnd.addEventListener('click', () => download(endBlob, 'frame-akhir'));
+  window.addEventListener('beforeunload', () => { if (objectUrl) URL.revokeObjectURL(objectUrl); });
+})();
+</script>
+</body>
+</html>
