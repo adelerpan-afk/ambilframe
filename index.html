@@ -24,7 +24,6 @@ button:hover:not(:disabled){transform:translateY(-1px)}
 button:disabled{opacity:.42;cursor:not-allowed}
 .primary{background:var(--accent);color:#0b1020}
 .secondary{background:#253451;color:var(--text);border:1px solid #3a4a6a}
-.success{background:var(--accent2);color:#06251f}
 .status{margin:12px 2px 0;color:var(--muted);font-size:.9rem;min-height:1.4em}
 .status.error{color:var(--danger)}
 .status.good{color:var(--accent2)}
@@ -42,7 +41,6 @@ video{display:block;width:100%;max-height:480px;background:#05070c;border-radius
 .placeholder{color:#7786a3;text-align:center;padding:28px 10px}
 .card-foot{padding:13px 15px;display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap}
 .dimensions{font-size:.82rem;color:var(--muted);overflow-wrap:anywhere}
-.actions{display:flex;gap:8px;flex-wrap:wrap}
 .bottom{display:flex;gap:10px;flex-wrap:wrap;justify-content:space-between;align-items:center;margin-top:17px}
 .bottom .hint{max-width:610px}
 footer{color:#7786a3;font-size:.82rem;text-align:center;margin-top:24px}
@@ -54,7 +52,7 @@ footer{color:#7786a3;font-size:.82rem;text-align:center;margin-top:24px}
 <header>
   <div class="eyebrow">Video utility · lokal di browser</div>
   <h1>Ambil Frame Awal &amp; Akhir</h1>
-  <p>Unggah video, lalu ambil gambar dari frame pertama dan frame terakhir yang berhasil didekode browser. Hasil disimpan sebagai PNG dengan resolusi asli video.</p>
+  <p>Unggah video, lalu ambil frame pertama dan frame terakhir (persis di ujung). Hasil disimpan sebagai PNG dengan resolusi asli video.</p>
 </header>
 <section class="panel">
   <div class="upload">
@@ -73,7 +71,7 @@ footer{color:#7786a3;font-size:.82rem;text-align:center;margin-top:24px}
       <span id="resolutionMeta" class="pill">Resolusi: --</span>
     </div>
     <div class="bottom">
-      <span class="hint">Frame akhir dicari dengan mencoba beberapa timestamp dari ujung video, sambil menolak frame hitam atau duplikat. Untuk video yang ujungnya bermasalah (audio tail / VFR), proses bisa memakan beberapa detik.</span>
+      <span class="hint">Frame akhir diambil langsung dari ujung video (duration − 0,001 s). Jika hasilnya kosong karena audio lebih panjang dari video, akan otomatis dicoba beberapa timestamp mundur kecil.</span>
       <button id="extractBtn" class="primary" disabled>Ambil kedua frame</button>
     </div>
   </div>
@@ -86,7 +84,7 @@ footer{color:#7786a3;font-size:.82rem;text-align:center;margin-top:24px}
     <div class="card-foot"><span id="startInfo" class="dimensions">Belum diambil</span><button id="downloadStart" class="secondary" disabled>Unduh PNG</button></div>
   </article>
   <article class="frame-card">
-    <div class="frame-head"><div><h2>02 · Frame akhir</h2><p>Frame terakhir yang terbaca</p></div><span class="pill">END</span></div>
+    <div class="frame-head"><div><h2>02 · Frame akhir</h2><p>Frame terakhir</p></div><span class="pill">END</span></div>
     <div class="preview" id="endPreview"><div class="placeholder">Frame akhir akan tampil di sini</div></div>
     <div class="card-foot"><span id="endInfo" class="dimensions">Belum diambil</span><button id="downloadEnd" class="secondary" disabled>Unduh PNG</button></div>
   </article>
@@ -114,7 +112,6 @@ footer{color:#7786a3;font-size:.82rem;text-align:center;margin-top:24px}
   let sourceName = 'video';
   let startBlob = null, endBlob = null;
   let startPreviewUrl = null, endPreviewUrl = null;
-  let startSig = null;
   let activeJob = 0;
 
   function setStatus(message, type = '') {
@@ -128,8 +125,6 @@ footer{color:#7786a3;font-size:.82rem;text-align:center;margin-top:24px}
     return `${m}:${s}`;
   }
 
-  // Wait for an event with a hard timeout — prevents hangs when a browser
-  // never fires `loadeddata` after a seek, or `seeked` on an unsupported codec.
   function waitEvent(target, eventName, errorName = 'error', timeoutMs = 15000) {
     return new Promise((resolve, reject) => {
       let timer = null;
@@ -151,8 +146,7 @@ footer{color:#7786a3;font-size:.82rem;text-align:center;margin-top:24px}
     });
   }
 
-  // Resolve once a video frame has actually been presented to the compositor.
-  // `seeked` alone is NOT sufficient: drawImage can still read the previous frame.
+  // Tunggu frame baru benar-benar di-presentasikan (bukan cuma 'seeked').
   function waitPresentedFrame(timeoutMs = 3000) {
     return new Promise((resolve) => {
       let done = false;
@@ -171,7 +165,7 @@ footer{color:#7786a3;font-size:.82rem;text-align:center;margin-top:24px}
       if (video.seekable && video.seekable.length) {
         return video.seekable.end(video.seekable.length - 1);
       }
-    } catch (_) { /* ignore */ }
+    } catch (_) {}
     return video.duration;
   }
 
@@ -181,19 +175,14 @@ footer{color:#7786a3;font-size:.82rem;text-align:center;margin-top:24px}
     const samePosition = Math.abs(video.currentTime - target) <= 0.0005;
 
     if (samePosition && video.readyState >= 2) {
-      // Frame already there; just wait one paint cycle.
       await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
       return;
     }
-
-    // If we're already at the target but have no frame data yet, nudge the
-    // playhead so the browser actually decodes a frame.
     let seekTarget = target;
     if (samePosition) {
       if (target < max) seekTarget = target + 0.001;
       else if (target > 0) seekTarget = target - 0.001;
     }
-
     const p = waitEvent(video, 'seeked', 'error', 15000);
     video.currentTime = seekTarget;
     await p;
@@ -201,43 +190,21 @@ footer{color:#7786a3;font-size:.82rem;text-align:center;margin-top:24px}
     await waitPresentedFrame(3000);
   }
 
-  // Perceptual stats on a small thumbnail. Used to reject black frames and
-  // frames that silently duplicate the start frame (seek failure).
-  function computeStats(canvas) {
+  // Statistik sederhana untuk mendeteksi frame kosong/hitam.
+  function isBlackFrame(canvas) {
     const w = 64, h = 36;
     const c = document.createElement('canvas');
     c.width = w; c.height = h;
     const ctx = c.getContext('2d', { willReadFrequently: true });
     ctx.drawImage(canvas, 0, 0, w, h);
     const data = ctx.getImageData(0, 0, w, h).data;
+    let nonBlack = 0;
     const total = w * h;
-    const lum = new Uint8Array(total);
-    let sum = 0, nonBlack = 0;
-    for (let i = 0, j = 0; i < data.length; i += 4, j++) {
+    for (let i = 0; i < data.length; i += 4) {
       const v = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
-      lum[j] = v;
-      sum += v;
       if (v > 8) nonBlack++;
     }
-    const avg = sum / total;
-    let hash = '';
-    for (let j = 0; j < total; j++) hash += lum[j] >= avg ? '1' : '0';
-    return { avg, nonBlackRatio: nonBlack / total, hash };
-  }
-
-  function hammingDistance(a, b) {
-    if (!a || !b || a.length !== b.length) return Infinity;
-    let d = 0;
-    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) d++;
-    return d;
-  }
-
-  function sameSig(a, b) {
-    if (!a || !b) return false;
-    const dist = hammingDistance(a.hash, b.hash);
-    // 2% of bits is a strict threshold: catches silent-seek duplicates
-    // without rejecting genuinely different frames.
-    return dist < a.hash.length * 0.02 && Math.abs(a.avg - b.avg) < 2;
+    return (nonBlack / total) < 0.02;
   }
 
   function capture() {
@@ -250,24 +217,21 @@ footer{color:#7786a3;font-size:.82rem;text-align:center;margin-top:24px}
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Canvas tidak tersedia di browser ini.');
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const stats = computeStats(canvas);
+    const blank = isBlackFrame(canvas);
     return new Promise((resolve, reject) => {
       canvas.toBlob(blob => {
-        if (blob) resolve({ blob, width: canvas.width, height: canvas.height, stats });
+        if (blob) resolve({ blob, width: canvas.width, height: canvas.height, blank });
         else reject(new Error('Gagal membuat PNG. Coba browser lain.'));
       }, 'image/png');
     });
   }
 
   function showFrame(container, infoEl, result, timeLabel, slot) {
-    // Revoke the previous preview URL to avoid leaking memory across extractions.
     if (slot === 'start' && startPreviewUrl) { URL.revokeObjectURL(startPreviewUrl); startPreviewUrl = null; }
     if (slot === 'end' && endPreviewUrl) { URL.revokeObjectURL(endPreviewUrl); endPreviewUrl = null; }
-
     const url = URL.createObjectURL(result.blob);
     if (slot === 'start') startPreviewUrl = url;
     else if (slot === 'end') endPreviewUrl = url;
-
     container.replaceChildren();
     const img = document.createElement('img');
     img.src = url;
@@ -302,7 +266,6 @@ footer{color:#7786a3;font-size:.82rem;text-align:center;margin-top:24px}
 
     activeJob++;
     startBlob = endBlob = null;
-    startSig = null;
     downloadStart.disabled = downloadEnd.disabled = extractBtn.disabled = true;
     clearPreviews();
 
@@ -338,72 +301,63 @@ footer{color:#7786a3;font-size:.82rem;text-align:center;margin-top:24px}
     video.pause();
 
     try {
+      // ----- Frame awal -----
       setStatus('Mengambil frame awal…');
       await seekTo(0);
       const start = await capture();
       if (job !== activeJob) return;
       startBlob = start.blob;
-      startSig = start.stats;
       showFrame(startPreview, startInfo, start, `t = ${formatTime(video.currentTime)}`, 'start');
 
-      setStatus('Mencari frame terakhir yang dapat dibaca…');
+      // ----- Frame akhir -----
+      setStatus('Mengambil frame akhir…');
       const end = safeSeekEnd();
-
-      // Candidates ordered from latest to earlier. Each is a delta from the
-      // seekable end. `0` means "as close to the end as we can safely seek".
-      const deltas = [0, 1/240, 1/120, 1/60, 1/30, 1/15, 0.1, 0.25, 0.5, 1.0];
+      // Prioritas: tepat di ujung. Fallback hanya jika hasilnya hitam (audio tail).
+      const candidates = [
+        Math.max(0, end - 0.001),
+        Math.max(0, end - 0.1),
+        Math.max(0, end - 0.3),
+        Math.max(0, end - 0.7)
+      ];
+      // Dedupe
       const seen = new Set();
-      const candidates = [];
-      for (const d of deltas) {
-        const t = Math.max(0, end - d);
-        const key = t.toFixed(4);
-        if (seen.has(key)) continue;
-        seen.add(key);
-        candidates.push(t);
+      const unique = [];
+      for (const t of candidates) {
+        const k = t.toFixed(4);
+        if (!seen.has(k)) { seen.add(k); unique.push(t); }
       }
 
-      let finalResult = null;
-      let finalTime = 0;
-      let fallback = null;
-      let fallbackTime = 0;
+      let chosen = null;
+      let chosenTime = 0;
+      let firstBlank = null;
+      let firstBlankTime = 0;
 
-      for (const t of candidates) {
+      for (const t of unique) {
         try {
           await seekTo(t);
           if (job !== activeJob) return;
-          const candidate = await capture();
-          const stats = candidate.stats;
-
-          // Reject near-black frames (frame kosong di ujung video).
-          if (stats.nonBlackRatio < 0.02) {
-            if (!fallback) { fallback = candidate; fallbackTime = video.currentTime; }
+          const frame = await capture();
+          if (frame.blank) {
+            if (!firstBlank) { firstBlank = frame; firstBlankTime = video.currentTime; }
             continue;
           }
-          // Reject silent-seek duplicates of the start frame.
-          if (startSig && sameSig(stats, startSig)) {
-            if (!fallback) { fallback = candidate; fallbackTime = video.currentTime; }
-            continue;
-          }
-          finalResult = candidate;
-          finalTime = video.currentTime;
+          chosen = frame;
+          chosenTime = video.currentTime;
           break;
-        } catch (_) {
-          // Try an earlier timestamp (unsupported codec or timeout).
-        }
+        } catch (_) { /* coba timestamp sebelumnya */ }
       }
 
-      if (!finalResult && fallback) {
-        // Every candidate was rejected (black or duplicate). Use the best
-        // rejected candidate rather than failing outright.
-        finalResult = fallback;
-        finalTime = fallbackTime;
+      // Kalau semua kandidat hitam, tetap gunakan yang pertama agar user dapat sesuatu.
+      if (!chosen && firstBlank) {
+        chosen = firstBlank;
+        chosenTime = firstBlankTime;
       }
-      if (!finalResult) {
+      if (!chosen) {
         throw new Error('Tidak berhasil membaca frame akhir. Coba ekspor ulang ke MP4 H.264 / WebM.');
       }
 
-      endBlob = finalResult.blob;
-      showFrame(endPreview, endInfo, finalResult, `t ≈ ${formatTime(finalTime)}`, 'end');
+      endBlob = chosen.blob;
+      showFrame(endPreview, endInfo, chosen, `t ≈ ${formatTime(chosenTime)}`, 'end');
       downloadStart.disabled = downloadEnd.disabled = false;
       setStatus('Selesai! Kedua frame siap diunduh sebagai PNG.', 'good');
     } catch (err) {
